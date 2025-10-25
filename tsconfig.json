@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    // Node.js + Express Settings
+    "target": "es2022", // Phiên bản JS xuất ra
+    "module": "commonjs", // Dùng ESM modules
+    "rootDir": "./src", // Thư mục source TS
+    "outDir": "./dist", // Thư mục build JS
+    "esModuleInterop": true, // Hỗ trợ import các package CommonJS
+    "forceConsistentCasingInFileNames": true,
+
+    // Type Checking
+    "strict": true, // Bật tất cả chế độ strict
+    "noUncheckedIndexedAccess": true, // Bắt lỗi khi index object
+    "exactOptionalPropertyTypes": true, // Kiểu optional chính xác
+    "skipLibCheck": true, // Bỏ kiểm tra type của node_modules
+
+    // Type Declarations
+    "declaration": true, // Tạo .d.ts khi build
+    "declarationMap": true, // Tạo map cho declaration
+    "sourceMap": true, // Tạo source map
+
+    // Libraries & Types
+    "types": ["node", "express"], // Biết type Node và Express
+
+    // Module Handling
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+    "moduleDetection": "force"
+  }
+}
