@@ -21,11 +21,11 @@ router.delete("/cart/:itemId", authMiddleware, removeFromCart); // xóa sản ph
 
 // Đơn hàng (user)
 router.post("/", authMiddleware, createOrder); // tạo đơn hàng
-router.get("/", authMiddleware, getUserOrders); // lấy đơn hàng của user
+router.get("/user", authMiddleware, getUserOrders); // lấy đơn hàng của user
 
 // Đơn hàng (admin)
 router.get("/all", authMiddleware, verifyAdmin, getAllOrders);
-router.get("/:id", authMiddleware, verifyAdmin, getOrderById);
+router.get("/:id", authMiddleware, getOrderById);
 router.delete("/:id", authMiddleware, verifyAdmin, deleteOrder);
 
 export default router;

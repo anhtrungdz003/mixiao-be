@@ -1,17 +1,13 @@
 import express from "express";
-import {
-  getAllProducts,
-  addProduct,
-  updateProduct,
-  deleteProduct,
-} from "../controller/product.Controller";
+import { productController } from "../controller/product.Controller";
+import { uploadProduct } from "../middleware/uploadProduct.middleware";
 import { verifyAdmin } from "../middleware/admin.middleware";
 
 const router = express.Router();
 
-router.get("/", getAllProducts); // GET tất cả sản phẩm
-router.post("/", verifyAdmin, addProduct); // POST thêm sản phẩm
-router.put("/:id", verifyAdmin, updateProduct);
-router.delete("/:id", verifyAdmin, deleteProduct);
+router.get("/", productController.getAll);
+router.post("/", verifyAdmin, uploadProduct, productController.add);
+router.put("/:id", verifyAdmin, uploadProduct, productController.update);
+router.delete("/:id", verifyAdmin, productController.delete);
 
 export default router;

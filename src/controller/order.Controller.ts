@@ -11,6 +11,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: "Chọn sản phẩm để đặt hàng" });
 
     let total = 0;
+    // Tính tổng tiền
     for (const item of items) {
       const [rows]: any = await db.query(
         "SELECT price, stock FROM products WHERE id=?",
@@ -27,11 +28,28 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
       total += rows[0].price * item.quantity;
     }
 
-    const [orderResult]: any = await db.query(
-      "INSERT INTO orders (user_id, total, status) VALUES (?, ?, ?)",
-      [userId, total, "pending"]
+    // 🔹 Kiểm tra user đã có cart chưa
+    const [existingCart]: any = await db.query(
+      "SELECT * FROM orders WHERE user_id=? AND status='cart'",
+      [userId]
     );
-    const orderId = orderResult.insertId;
+
+    let orderId;
+    if (existingCart.length > 0) {
+      // Dùng giỏ hàng hiện có
+      orderId = existingCart[0].id;
+      await db.query(
+        "UPDATE orders SET total=?, status='pending', updated_at=NOW() WHERE id=?",
+        [total, orderId]
+      );
+    } else {
+      // Tạo mới
+      const [orderResult]: any = await db.query(
+        "INSERT INTO orders (user_id, total, status) VALUES (?, ?, ?)",
+        [userId, total, "pending"]
+      );
+      orderId = orderResult.insertId;
+    }
 
     const detailedItems: any[] = [];
     for (const item of items) {
@@ -39,14 +57,30 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
         "SELECT price, name, category, image FROM products WHERE id=?",
         [item.product_id]
       );
-      await db.query(
-        "INSERT INTO order_items (user_id, order_id, product_id, quantity, price) VALUES (?, ?, ?, ?, ?)",
-        [userId, orderId, item.product_id, item.quantity, product[0].price]
+
+      // Nếu sản phẩm đã có trong order_items → update quantity, nếu chưa → insert
+      const [existingItem]: any = await db.query(
+        "SELECT * FROM order_items WHERE order_id=? AND product_id=?",
+        [orderId, item.product_id]
       );
+
+      if (existingItem.length > 0) {
+        await db.query(
+          "UPDATE order_items SET quantity=? WHERE order_id=? AND product_id=?",
+          [item.quantity, orderId, item.product_id]
+        );
+      } else {
+        await db.query(
+          "INSERT INTO order_items (user_id, order_id, product_id, quantity, price) VALUES (?, ?, ?, ?, ?)",
+          [userId, orderId, item.product_id, item.quantity, product[0].price]
+        );
+      }
+
       await db.query("UPDATE products SET stock = stock - ? WHERE id=?", [
         item.quantity,
         item.product_id,
       ]);
+
       detailedItems.push({
         product_id: item.product_id,
         name: product[0].name,
@@ -136,14 +170,20 @@ export const getAllOrders = async (_req: AuthRequest, res: Response) => {
     for (const order of orders) {
       const [items]: any = await db.query(
         `
-        SELECT oi.product_id, oi.quantity, oi.price, p.name, p.category, p.image
-        FROM order_items oi
-        JOIN products p ON oi.product_id = p.id
-        WHERE oi.order_id = ?
-      `,
+    SELECT oi.product_id, oi.quantity, oi.price, p.name, p.category, p.image
+    FROM order_items oi
+    JOIN products p ON oi.product_id = p.id
+    WHERE oi.order_id = ?
+  `,
         [order.id]
       );
       order.items = items;
+
+      // Cập nhật tổng tiền theo order_items
+      order.total = items.reduce(
+        (sum: number, i: any) => sum + i.price * i.quantity,
+        0
+      );
     }
 
     res.json({ message: "Lấy tất cả đơn hàng thành công", data: orders });
@@ -170,14 +210,20 @@ export const getUserOrders = async (req: AuthRequest, res: Response) => {
     for (const order of orders) {
       const [items]: any = await db.query(
         `
-        SELECT oi.product_id, oi.quantity, oi.price, p.name, p.category, p.image
-        FROM order_items oi
-        JOIN products p ON oi.product_id = p.id
-        WHERE oi.order_id=?
-      `,
+    SELECT oi.product_id, oi.quantity, oi.price, p.name, p.category, p.image
+    FROM order_items oi
+    JOIN products p ON oi.product_id = p.id
+    WHERE oi.order_id=?
+  `,
         [order.id]
       );
       order.items = items;
+
+      // Cập nhật tổng tiền theo order_items
+      order.total = items.reduce(
+        (sum: number, i: any) => sum + i.price * i.quantity,
+        0
+      );
     }
 
     res.json({ message: "Lấy đơn hàng thành công", data: orders });
@@ -223,15 +269,20 @@ export const getUserCart = async (req: AuthRequest, res: Response) => {
     if (orders.length === 0)
       return res.json({ message: "Giỏ hàng trống", data: [] });
     const cart = orders[0];
-    // Sửa: Thêm oi.id AS id để trả về ID của order_item
+
     const [items]: any = await db.query(
       `SELECT oi.id AS id, oi.product_id, oi.quantity, oi.price, p.name, p.category, p.image
-       FROM order_items oi
-       JOIN products p ON oi.product_id = p.id
-       WHERE oi.order_id=?`,
+   FROM order_items oi
+   JOIN products p ON oi.product_id = p.id
+   WHERE oi.order_id=?`,
       [cart.id]
     );
-    cart.items = items; // Giờ items có id (order_item_id), product_id, etc.
+
+    cart.items = items;
+    cart.total = items.reduce(
+      (sum: number, item: any) => sum + item.price * item.quantity,
+      0
+    );
     res.json({ message: "Lấy giỏ hàng thành công", data: cart });
   } catch (err: any) {
     res.status(500).json({ message: "Lỗi hệ thống: " + err.message });
@@ -306,6 +357,23 @@ export const addToCart = async (req: AuthRequest, res: Response) => {
       ); // Thêm log
     }
 
+    // Tính lại tổng tiền giỏ hàng
+    const [orderItems]: any = await db.query(
+      "SELECT price, quantity FROM order_items WHERE order_id=?",
+      [orderId]
+    );
+    const newTotal = orderItems.reduce(
+      (sum: number, item: any) => sum + item.price * item.quantity,
+      0
+    );
+
+    // Cập nhật total vào bảng orders
+    const [result]: any = await db.query(
+      "UPDATE orders SET total=? WHERE id=?",
+      [newTotal, orderId]
+    );
+    console.log("Update total result:", result);
+
     res.json({ message: "Thêm vào giỏ hàng thành công" });
   } catch (err: any) {
     console.error("❌ addToCart: Error =", err.message); // Thêm log lỗi
@@ -318,10 +386,34 @@ export const removeFromCart = async (req: AuthRequest, res: Response) => {
     const userId = req.user!.id;
     const { itemId } = req.params;
 
+    // Xóa order_item
     await db.query("DELETE FROM order_items WHERE id=? AND user_id=?", [
       itemId,
       userId,
     ]);
+
+    // Kiểm tra còn order_items nào không
+    const [items]: any = await db.query(
+      "SELECT * FROM order_items WHERE order_id=(SELECT id FROM orders WHERE user_id=? AND status='cart')",
+      [userId]
+    );
+
+    if (items.length === 0) {
+      // Xóa luôn order trống
+      await db.query("DELETE FROM orders WHERE user_id=? AND status='cart'", [
+        userId,
+      ]);
+    } else {
+      // Cập nhật lại tổng
+      const total = items.reduce(
+        (sum: any, i: any) => sum + i.price * i.quantity,
+        0
+      );
+      await db.query(
+        "UPDATE orders SET total=? WHERE user_id=? AND status='cart'",
+        [total, userId]
+      );
+    }
 
     res.json({ message: "Xóa sản phẩm khỏi giỏ hàng thành công" });
   } catch (err: any) {

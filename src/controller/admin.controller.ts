@@ -16,10 +16,14 @@ export const getAllUsers = async (req: any, res: Response) => {
 
 // Thêm user
 export const addUser = async (req: Request, res: Response) => {
-  const { username, full_name, email, password, phone, address, avatar, role } =
+  let { username, full_name, email, password, phone, address, avatar, role } =
     req.body;
-  if (!username || !email || !password)
+
+  if (!username || !email)
     return res.status(400).json({ message: "Vui lòng nhập đầy đủ thông tin" });
+
+  // Nếu không có password, mặc định là "123456"
+  if (!password) password = "123456";
 
   try {
     const [rows]: any = await db.query("SELECT * FROM users WHERE email = ?", [
@@ -30,15 +34,15 @@ export const addUser = async (req: Request, res: Response) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     await db.query(
-      "INSERT INTO users (username, full_name, email, password, phone, address, avatar, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO users (username, full_name, email, password, phone, address, avatar, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
       [
         username,
-        full_name,
+        full_name || "",
         email,
         hashedPassword,
-        phone,
-        address,
-        avatar,
+        phone || "",
+        address || "",
+        avatar || "",
         role || "user",
       ]
     );
@@ -58,6 +62,7 @@ export const updateUser = async (req: Request, res: Response) => {
   try {
     let query = "UPDATE users SET ";
     const params: any[] = [];
+
     if (username) {
       query += "username = ?, ";
       params.push(username);
@@ -90,6 +95,13 @@ export const updateUser = async (req: Request, res: Response) => {
       const hashed = await bcrypt.hash(password, 10);
       query += "password = ?, ";
       params.push(hashed);
+    }
+
+    // Nếu không có trường nào cập nhật, trả về lỗi
+    if (params.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "Không có dữ liệu hợp lệ để cập nhật" });
     }
 
     query = query.slice(0, -2) + " WHERE id = ?";

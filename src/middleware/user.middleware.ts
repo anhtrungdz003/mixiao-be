@@ -1,11 +1,14 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
-import db from "../database"; // truy vấn user
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import db from "../database";
 
 dotenv.config();
 
-// --- Mở rộng user trong request ---
+// Mở rộng user trong request
 export interface AuthUser {
   id: number;
   role: "user" | "admin";
@@ -13,14 +16,13 @@ export interface AuthUser {
   email: string;
   phone: string;
   address: string;
-  avatar?: string;
 }
 
 export interface AuthRequest extends Request {
   user?: AuthUser;
 }
 
-// --- Middleware xác thực user ---
+// Middleware xác thực JWT
 export const authMiddleware = async (
   req: Request,
   res: Response,
@@ -48,9 +50,39 @@ export const authMiddleware = async (
     authReq.user = rows[0];
     next();
   } catch (err) {
-    console.error(err);
     return res.status(403).json({ message: "Token không hợp lệ" });
   }
 };
 
+// Cấu hình multer cho upload avatar
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, "../../uploads/avatars");
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, `${uniqueSuffix}${path.extname(file.originalname)}`);
+  },
+});
 
+const fileFilter = (
+  req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  if (file.mimetype.startsWith("image/")) {
+    cb(null, true);
+  } else {
+    cb(new Error("Chỉ cho phép upload file ảnh (JPEG, PNG, v.v.)"));
+  }
+};
+
+export const uploadAvatar = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+}).single("avatar");
